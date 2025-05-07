@@ -9,6 +9,7 @@
 		status: string;
 	} | null = null;
 
+	export let isProcessing = false;
 	export let onSave: (client: {
 		id?: number;
 		name: string;
@@ -24,7 +25,7 @@
 		status: "Ativo",
 	};
 
-	const statusOptions = ["Ativo", "Inativo"];
+	const statusOptions = ["Ativo", "Inativo", "Prospecto"];
 
 	$: if (client) {
 		localClient = { ...client };
@@ -44,7 +45,6 @@
 
 	function handleSave() {
 		onSave(localClient);
-		closeModal();
 	}
 </script>
 
@@ -55,7 +55,7 @@
 				{client ? "Editar Cliente" : "Adicionar Cliente"}
 			</h3>
 
-			<form method="dialog" on:submit|preventDefault={handleSave}>
+			<form on:submit|preventDefault={handleSave}>
 				<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 					<div class="form-control">
 						<label class="label" for="client-name">
@@ -132,20 +132,25 @@
 						</svg>
 						Cancelar
 					</button>
-					<button type="submit" class="btn btn-primary">
-						<svg
-							xmlns="http://www.w3.org/2000/svg"
-							viewBox="0 0 24 24"
-							fill="currentColor"
-							class="size-[1em]"
-						>
-							<path
-								fill-rule="evenodd"
-								d="M19.916 4.626a.75.75 0 0 1 .208 1.04l-9 13.5a.75.75 0 0 1-1.154.114l-6-6a.75.75 0 0 1 1.06-1.06l5.353 5.353 8.493-12.74a.75.75 0 0 1 1.04-.207Z"
-								clip-rule="evenodd"
-							/>
-						</svg>
-						Salvar
+					<button type="submit" class="btn btn-primary" disabled={isProcessing}>
+						{#if isProcessing}
+							<span class="loading loading-spinner"></span>
+							Salvando...
+						{:else}
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								viewBox="0 0 24 24"
+								fill="currentColor"
+								class="size-[1em]"
+							>
+								<path
+									fill-rule="evenodd"
+									d="M19.916 4.626a.75.75 0 0 1 .208 1.04l-9 13.5a.75.75 0 0 1-1.154.114l-6-6a.75.75 0 0 1 1.06-1.06l5.353 5.353 8.493-12.74a.75.75 0 0 1 1.04-.207Z"
+									clip-rule="evenodd"
+								/>
+							</svg>
+							Salvar
+						{/if}
 					</button>
 				</div>
 			</form>

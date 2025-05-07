@@ -168,7 +168,7 @@
         try {
             if (orderData.id) {
                 // Update existing order
-                const { error: orderError } = await supabase
+                const { data: updatedOrder, error: orderError } = await supabase
                     .from('orders')
                     .update({
                         client_id: orderData.client_id,
@@ -176,7 +176,9 @@
                         status: orderData.status,
                         date: orderData.date
                     })
-                    .eq('id', orderData.id);
+                    .eq('id', orderData.id)
+                    .select()
+                    .single();
 
                 if (orderError) throw orderError;
 

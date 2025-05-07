@@ -54,7 +54,21 @@
     };
 
     $: if (order) {
-        localOrder = { ...order };
+        localOrder = { 
+            clientId: order.client_id || 0,
+            products: order.order_items?.map(item => ({
+                productId: item.product_id || 0,
+                quantity: item.quantity || 1,
+                price: item.price || 0
+            })) || [{
+                productId: 0,
+                quantity: 1,
+                price: 0
+            }],
+            total: order.total || 0,
+            status: order.status || "Pendente",
+            date: order.date || new Date().toISOString().split('T')[0]
+        };
     } else {
         localOrder = {
             clientId: 0,
@@ -70,6 +84,9 @@
     }
 
     function addProduct() {
+        if (!localOrder.products || !Array.isArray(localOrder.products)) {
+            localOrder.products = [];
+        }
         localOrder.products = [...localOrder.products, {
             productId: 0,
             quantity: 1,

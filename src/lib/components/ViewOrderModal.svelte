@@ -109,6 +109,12 @@
 
 <style>
     @media print {
+        /* Reset all print styles */
+        * {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+        }
+        
         /* Hide all other elements when printing */
         :global(body > *:not(.modal)) {
             display: none !important;
@@ -117,10 +123,40 @@
         :global(.modal) {
             position: static !important;
             display: block !important;
+            width: 100% !important;
+            height: auto !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            border: none !important;
+            overflow: visible !important;
         }
-
-        :global(.print\:*) {
+        
+        :global(.modal-box) {
+            width: 100% !important;
+            max-width: 100% !important;
+            margin: 0 !important;
+            padding: 20px !important;
+            box-shadow: none !important;
+        }
+        
+        /* Force visibility of print content */
+        .print\:hidden {
+            display: none !important;
+        }
+        
+        .print\:block {
             display: block !important;
+        }
+        
+        /* Ensure tables are visible */
+        table {
+            width: 100% !important;
+            border-collapse: collapse !important;
+        }
+        
+        th, td {
+            border: 1px solid #ddd !important;
+            padding: 8px !important;
         }
     }
 </style>

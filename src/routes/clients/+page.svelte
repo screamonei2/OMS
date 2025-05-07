@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { onMount } from 'svelte';
+    import { onMount, tick } from 'svelte';
     import { supabase } from '$lib/supabase';
     import ClientModal from "$lib/components/ClientModal.svelte";
     import ConfirmDeleteModal from "$lib/components/ConfirmDeleteModal.svelte";
@@ -10,6 +10,7 @@
     let showConfirmDeleteModal = false;
     let showConfirmBulkDeleteModal = false;
     let loading = true;
+    let isProcessingSave = false; // Added this line
     let currentClient: {
         id?: number;
         name: string;
@@ -19,6 +20,19 @@
     } | null = null;
     let clientToDeleteId: number | null = null;
     let selectedClientIds = new Set<number>();
+
+    function getStatusBadgeClass(status: string) {
+        switch (status) {
+            case 'Ativo':
+                return 'badge-success';
+            case 'Inativo':
+                return 'badge-error';
+            case 'Prospecto':
+                return 'badge-info';
+            default:
+                return 'badge-ghost';
+        }
+    }
 
     async function fetchClients() {
         const { data, error } = await supabase
@@ -117,6 +131,8 @@
         phone: string;
         status: string;
     }) {
+        isProcessingSave = true;
+        await tick(); // Ensure UI updates before async operations
         if (clientData.id) {
             const { error } = await supabase
                 .from('clients')
@@ -130,6 +146,7 @@
 
             if (error) {
                 console.error('Error updating client:', error);
+                isProcessingSave = false;
                 return;
             }
         } else {
@@ -144,9 +161,12 @@
 
             if (error) {
                 console.error('Error inserting client:', error);
+                isProcessingSave = false;
                 return;
             }
         }
+        // await fetchClients(); // Refresh the client list - Removed as per real-time subscription
+        isProcessingSave = false;
         showClientModal = false;
     }
 
@@ -276,11 +296,11 @@
                             </label>
                         </th>
                         <th class="w-[8%]">ID</th>
-                        <th class="w-[25%]">Nome</th>
-                        <th class="w-[15%]">Email</th>
-                        <th class="w-[15%]">Telefone</th>
-                        <th class="w-[20%]">Status</th>
-                        <th class="w-[13%] text-right"></th>
+                        <th class="w-[30%]">Nome</th>
+                        <th class="w-[30%]">Email</th>
+                        <th class="w-[20%]">Telefone</th>
+                        <th class="w-[15%]">Status</th>
+                        <th class="w-[5%] text-right"></th>
                     </tr>
                 </thead>
                 <tbody>
@@ -307,7 +327,7 @@
                             <td>{client.name}</td>
                             <td>{client.email}</td>
                             <td>{client.phone}</td>
-                            <td>{client.status}</td>
+                            <td><span class="badge {getStatusBadgeClass(client.status)}">{client.status}</span></td>
                             <td class="text-right">
                                 <div
                                     class="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200"
@@ -369,6 +389,7 @@
     bind:showModal={showClientModal}
     client={currentClient}
     onSave={handleSaveClient}
+    isProcessing={isProcessingSave}
 />
 <ConfirmDeleteModal
     bind:showModal={showConfirmDeleteModal}
