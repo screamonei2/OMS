@@ -3,7 +3,13 @@ import supabase from '../supabaseClient';
 export const fetchOrders = async () => {
   const { data, error } = await supabase
     .from('orders')
-    .select('client_id, order_items, total, status, date');
+    .select(`
+      client_id, 
+      total, 
+      status, 
+      date,
+      order_items:order_items(*)
+    `);
 
   if (error) {
     console.error('Error fetching orders:', error);
@@ -14,14 +20,37 @@ export const fetchOrders = async () => {
 };
 
 export const saveOrder = async (order: { client_id: number; order_items: any; total: number; status: string; date: string }) => {
-  const { data, error } = await supabase
+  const { data: orderData, error: orderError } = await supabase
     .from('orders')
-    .insert([order]);
+    .insert({
+      client_id: order.client_id,
+      total: order.total,
+      status: order.status,
+      date: order.date
+    })
+    .select('id')
+    .single();
 
-  if (error) {
-    console.error('Error saving order:', error);
+  if (orderError) {
+    console.error('Error saving order:', orderError);
     return null;
   }
 
-  return data;
+  const orderItems = order.order_items.map(item => ({
+    order_id: orderData.id,
+    product_id: item.product_id,
+    quantity: item.quantity,
+    price: item.price
+  }));
+
+  const { error: itemsError } = await supabase
+    .from('order_items')
+    .insert(orderItems);
+
+  if (itemsError) {
+    console.error('Error saving order items:', itemsError);
+    return null;
+  }
+
+  return orderData;
 };
