@@ -3,13 +3,20 @@
     import { supabase } from '$lib/supabase';
     import ProductModal from "$lib/components/ProductModal.svelte";
     import ConfirmDeleteModal from "$lib/components/ConfirmDeleteModal.svelte";
-    import { writable } from "svelte/store";
 
-    let allProducts = [];
+    let allProducts: Array<{
+        id: number;
+        name: string;
+        price: number;
+        stock: number;
+        category: string;
+    }> = [];
     let searchTerm = "";
     let showProductModal = false;
     let showConfirmDeleteModal = false;
     let showConfirmBulkDeleteModal = false;
+    let loading = true;
+    let isProcessingSave = false;
     let currentProduct: {
         id?: number;
         name: string;
@@ -19,19 +26,18 @@
     } | null = null;
     let productToDeleteId: number | null = null;
     let selectedProductIds = new Set<number>();
-    let loading = true;
 
     async function fetchProducts() {
         const { data, error } = await supabase
             .from('products')
             .select('*')
-            .order('id');
-        
+            .order('name');
+
         if (error) {
             console.error('Error fetching products:', error);
             return;
         }
-        
+
         allProducts = data;
         loading = false;
     }
@@ -42,13 +48,14 @@
         // Subscribe to realtime changes
         const subscription = supabase
             .channel('products_changes')
-            .on('postgres_changes', 
+            .on('postgres_changes',
                 {
                     event: '*',
                     schema: 'public',
                     table: 'products'
                 },
                 (payload) => {
+                    console.log('Recebida atualização em tempo real para produtos:', payload);
                     fetchProducts();
                 }
             )
@@ -60,7 +67,7 @@
     });
 
     $: products = allProducts.filter((product) =>
-        product.name.toLowerCase().includes(searchTerm.toLowerCase()),
+        product.name.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
     $: allVisibleSelected = products.length > 0 && products.every((p) => selectedProductIds.has(p.id));
@@ -74,7 +81,7 @@
         } else {
             products.forEach((p) => selectedProductIds.delete(p.id));
         }
-        selectedProductIds = selectedProductIds; // Trigger reactivity
+        selectedProductIds = selectedProductIds;
     }
 
     function handleRowCheckboxChange(productId: number, checked: boolean) {
@@ -83,11 +90,11 @@
         } else {
             selectedProductIds.delete(productId);
         }
-        selectedProductIds = selectedProductIds; // Trigger reactivity
+        selectedProductIds = selectedProductIds;
     }
 
     function openAddProductModal() {
-        currentProduct = null; // Clear current product for adding
+        currentProduct = null;
         showProductModal = true;
     }
 
@@ -98,7 +105,7 @@
         stock: number;
         category: string;
     }) {
-        currentProduct = { ...product }; // Set current product for editing
+        currentProduct = { ...product };
         showProductModal = true;
     }
 
@@ -118,39 +125,44 @@
         stock: number;
         category: string;
     }) {
-        if (productData.id) {
-            // Update existing product
-            const { error } = await supabase
-                .from('products')
-                .update({
-                    name: productData.name,
-                    price: productData.price,
-                    stock: productData.stock,
-                    category: productData.category
-                })
-                .eq('id', productData.id);
+        isProcessingSave = true;
+        try {
+            if (productData.id) {
+                const { error } = await supabase
+                    .from('products')
+                    .update({
+                        name: productData.name,
+                        price: productData.price,
+                        stock: productData.stock,
+                        category: productData.category
+                    })
+                    .eq('id', productData.id);
 
-            if (error) {
-                console.error('Error updating product:', error);
-                return;
-            }
-        } else {
-            // Add new product
-            const { error } = await supabase
-                .from('products')
-                .insert([{
-                    name: productData.name,
-                    price: productData.price,
-                    stock: productData.stock,
-                    category: productData.category || "Sem Categoria"
-                }]);
+                if (error) {
+                    console.error('Error updating product:', error);
+                    return;
+                }
+            } else {
+                const { error } = await supabase
+                    .from('products')
+                    .insert([{
+                        name: productData.name,
+                        price: productData.price,
+                        stock: productData.stock,
+                        category: productData.category
+                    }]);
 
-            if (error) {
-                console.error('Error inserting product:', error);
-                return;
+                if (error) {
+                    console.error('Error inserting product:', error);
+                    return;
+                }
             }
+            // Forçar atualização manual para garantir que os dados sejam atualizados
+            await fetchProducts();
+            showProductModal = false;
+        } finally {
+            isProcessingSave = false;
         }
-        showProductModal = false;
     }
 
     async function handleConfirmDelete() {
@@ -164,6 +176,9 @@
                 console.error('Error deleting product:', error);
                 return;
             }
+
+            // Forçar atualização manual para garantir que os dados sejam atualizados
+            await fetchProducts();
         }
         showConfirmDeleteModal = false;
         productToDeleteId = null;
@@ -279,11 +294,11 @@
                             </label>
                         </th>
                         <th class="w-[8%]">ID</th>
-                        <th class="w-[25%]">Nome</th>
-                        <th class="w-[15%]">Preço</th>
-                        <th class="w-[15%]">Estoque</th>
+                        <th class="w-[30%]">Nome</th>
+                        <th class="w-[20%]">Preço</th>
+                        <th class="w-[20%]">Estoque</th>
                         <th class="w-[20%]">Categoria</th>
-                        <th class="w-[13%] text-right"></th>
+                        <th class="w-[5%] text-right"></th>
                     </tr>
                 </thead>
                 <tbody>
@@ -370,15 +385,17 @@
 
 <ProductModal
     bind:showModal={showProductModal}
+    products={products}
     product={currentProduct}
     onSave={handleSaveProduct}
+    isProcessing={isProcessingSave}
 />
 <ConfirmDeleteModal
-    bind:showModal={showConfirmDeleteModal}
-    onConfirm={handleConfirmDelete}
-    productName={productToDeleteId
+    clientName={productToDeleteId
         ? allProducts.find((p) => p.id === productToDeleteId)?.name || ""
         : ""}
+    bind:showModal={showConfirmDeleteModal}
+    onConfirm={handleConfirmDelete}
 />
 <ConfirmDeleteModal
     bind:showModal={showConfirmBulkDeleteModal}

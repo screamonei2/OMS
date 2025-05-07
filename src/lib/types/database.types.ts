@@ -80,6 +80,7 @@ export type Database = {
         Row: {
           id: number
           client_id: number
+          order_items: any
           total: number
           status: string
           date: string
@@ -88,6 +89,7 @@ export type Database = {
         Insert: {
           id?: number
           client_id: number
+          order_items: any
           total: number
           status?: string
           date: string
@@ -96,6 +98,7 @@ export type Database = {
         Update: {
           id?: number
           client_id?: number
+          order_items?: any
           total?: number
           status?: string
           date?: string

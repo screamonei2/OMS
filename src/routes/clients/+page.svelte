@@ -4,7 +4,13 @@
     import ClientModal from "$lib/components/ClientModal.svelte";
     import ConfirmDeleteModal from "$lib/components/ConfirmDeleteModal.svelte";
 
-    let allClients = [];
+    let allClients: Array<{
+	id: number;
+	name: string;
+	email: string;
+	phone: string;
+	status: string;
+}> = [];
     let searchTerm = "";
     let showClientModal = false;
     let showConfirmDeleteModal = false;
@@ -39,12 +45,12 @@
             .from('clients')
             .select('*')
             .order('name');
-        
+
         if (error) {
             console.error('Error fetching clients:', error);
             return;
         }
-        
+
         allClients = data;
         loading = false;
     }
@@ -55,7 +61,7 @@
         // Subscribe to realtime changes
         const subscription = supabase
             .channel('clients_changes')
-            .on('postgres_changes', 
+            .on('postgres_changes',
                 {
                     event: '*',
                     schema: 'public',
@@ -183,7 +189,7 @@
                 console.error('Error deleting client:', error);
                 return;
             }
-            
+
             // Forçar atualização manual para garantir que os dados sejam atualizados
             await fetchClients();
         }
@@ -392,16 +398,17 @@
 
 <ClientModal
     bind:showModal={showClientModal}
+    clients={clients}
     client={currentClient}
     onSave={handleSaveClient}
     isProcessing={isProcessingSave}
 />
 <ConfirmDeleteModal
+	clientName={clientToDeleteId
+		? allClients.find((p) => p.id === clientToDeleteId)?.name || ""
+		: ""}
     bind:showModal={showConfirmDeleteModal}
     onConfirm={handleConfirmDelete}
-    clientName={clientToDeleteId
-        ? allClients.find((p) => p.id === clientToDeleteId)?.name || ""
-        : ""}
 />
 <ConfirmDeleteModal
     bind:showModal={showConfirmBulkDeleteModal}

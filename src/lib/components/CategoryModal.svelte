@@ -1,6 +1,13 @@
 <script lang="ts">
 	export let showModal = false;
 
+	export let categories: Array<{
+		id: number;
+		name: string;
+		description: string;
+		status: string;
+	}> = [];
+
 	export let category: {
 		id?: number;
 		name: string;
@@ -43,6 +50,15 @@
 		closeModal();
 	}
 </script>
+
+{#if !categories || categories.length === 0}
+	<div class="flex flex-col items-center justify-center h-full">
+		<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-[4em] text-gray-400">
+			<path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z"/>
+		</svg>
+		<p class="text-lg text-gray-500 mt-4">Nenhuma categoria encontrada.</p>
+	</div>
+{/if}
 
 {#if showModal}
 	<dialog class="modal modal-open">

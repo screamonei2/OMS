@@ -1,8 +1,9 @@
 <script lang="ts">
     export let showModal = false;
+    export let clientName = "";
     export let onConfirm: () => void;
     export let message = "";
-    
+
     function closeModal() {
         showModal = false;
     }

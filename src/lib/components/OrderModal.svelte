@@ -1,47 +1,126 @@
 <script lang="ts">
-    export let showModal = false;
-    export let order: {
-        id?: number;
-        clientId: number;
-        products: Array<{
-            productId: number;
-            quantity: number;
-            price: number;
-        }>;
-        total: number;
-        status: string;
-        date: string;
-    } | null = null;
+export let showModal = false;
+export let isProcessing = false;
 
-    export let onSave: (order: {
-        id?: number;
-        clientId: number;
-        products: Array<{
-            productId: number;
-            quantity: number;
-            price: number;
-        }>;
-        total: number;
-        status: string;
-        date: string;
-    }) => void;
+export let orders: Array<{
+    id: number;
+    client_id: number;
+    order_items: Array<{
+        product_id: number;
+        quantity: number;
+        price: number;
+    }>;
+    total: number;
+    status: string;
+    date: string;
+}> = [];
 
-    // Importar dados de clientes e produtos do estado global (a ser implementado)
-    const clients = [
-        { id: 1, name: "João Silva" },
-        { id: 2, name: "Maria Souza" },
-        { id: 3, name: "Carlos Oliveira" }
-    ];
+export let order: {
+    id?: number;
+    client_id: number;
+    order_items: Array<{
+        product_id: number;
+        quantity: number;
+        price: number;
+    }>;
+    total: number;
+    status: string;
+    date: string;
+} | null = null;
 
-    const products = [
-        { id: 1, name: "Produto A", price: 19.99 },
-        { id: 2, name: "Produto B", price: 29.99 },
-        { id: 3, name: "Produto C", price: 9.99 }
-    ];
+export let clients: Array<{
+    id: number;
+    name: string;
+}> = [];
 
-    const statusOptions = ["Pendente", "Em Processamento", "Enviado", "Entregue", "Cancelado"];
+export let products: Array<{
+    id: number;
+    name: string;
+    price: number;
+}> = [];
 
-    let localOrder = {
+import { onMount } from 'svelte';
+import { supabase } from '$lib/supabase';
+
+onMount(async () => {
+    const { data: productsData, error: productsError } = await supabase
+        .from('products')
+        .select('id, name, price');
+
+    if (productsError) {
+        console.error('Error fetching products:', productsError);
+    } else {
+        products = productsData;
+    }
+
+    const { data: clientsData, error: clientsError } = await supabase
+        .from('clients')
+        .select('id, name');
+
+    if (clientsError) {
+        console.error('Error fetching clients:', clientsError);
+    } else {
+        clients = clientsData;
+    }
+});
+
+export let onSave: (order: {
+    id?: number;
+    clientId: number;
+    products: Array<{
+        productId: number;
+        quantity: number;
+        price: number;
+    }>;
+    total: number;
+    status: string;
+    date: string;
+}) => void;
+
+const statusOptions = ["Pendente", "Em Processamento", "Enviado", "Entregue", "Cancelado"];
+
+let localOrder: {
+    id?: number;
+    clientId: number;
+    products: Array<{
+        productId: number;
+        quantity: number;
+        price: number;
+    }>;
+    total: number;
+    status: string;
+    date: string;
+} = {
+    clientId: 0,
+    products: [{
+        productId: 0,
+        quantity: 1,
+        price: 0
+    }],
+    total: 0,
+    status: "Pendente",
+    date: new Date().toISOString().split('T')[0]
+};
+
+$: if (order) {
+    localOrder = {
+        id: order.id,
+        clientId: order.client_id || 0,
+        products: order.order_items?.map(item => ({
+            productId: item.product_id || 0,
+            quantity: item.quantity || 1,
+            price: item.price || 0
+        })) || [{
+            productId: 0,
+            quantity: 1,
+            price: 0
+        }],
+        total: order.total || 0,
+        status: order.status || "Pendente",
+        date: order.date || new Date().toISOString().split('T')[0]
+    };
+} else {
+    localOrder = {
         clientId: 0,
         products: [{
             productId: 0,
@@ -52,79 +131,79 @@
         status: "Pendente",
         date: new Date().toISOString().split('T')[0]
     };
+}
 
-    $: if (order) {
-        localOrder = { 
-            clientId: order.client_id || 0,
-            products: order.order_items?.map(item => ({
-                productId: item.product_id || 0,
-                quantity: item.quantity || 1,
-                price: item.price || 0
-            })) || [{
-                productId: 0,
-                quantity: 1,
-                price: 0
-            }],
-            total: order.total || 0,
-            status: order.status || "Pendente",
-            date: order.date || new Date().toISOString().split('T')[0]
-        };
-    } else {
-        localOrder = {
-            clientId: 0,
-            products: [{
-                productId: 0,
-                quantity: 1,
-                price: 0
-            }],
-            total: 0,
-            status: "Pendente",
-            date: new Date().toISOString().split('T')[0]
-        };
+function addProduct() {
+    if (!localOrder.products || !Array.isArray(localOrder.products)) {
+        localOrder.products = [];
     }
+    localOrder.products = [...localOrder.products, {
+        productId: 0,
+        quantity: 1,
+        price: 0
+    }];
+}
 
-    function addProduct() {
-        if (!localOrder.products || !Array.isArray(localOrder.products)) {
-            localOrder.products = [];
-        }
-        localOrder.products = [...localOrder.products, {
-            productId: 0,
-            quantity: 1,
-            price: 0
-        }];
-    }
+function removeProduct(index: number) {
+    localOrder.products = localOrder.products.filter((_, i) => i !== index);
+}
 
-    function removeProduct(index: number) {
-        localOrder.products = localOrder.products.filter((_, i) => i !== index);
-    }
-
-    function updateProductPrice(index: number, productId: number) {
-        const product = products.find(p => p.id === productId);
-        if (product) {
-            localOrder.products[index].price = product.price;
-            calculateTotal();
-        }
-    }
-
-    function calculateTotal() {
-        localOrder.total = localOrder.products.reduce((sum, item) => 
-            sum + (item.price * item.quantity), 0);
-    }
-
-    $: {
+function updateProductPrice(index: number, productId: number) {
+    const product = products.find(p => p.id === productId);
+    if (product) {
+        localOrder.products[index].price = product.price;
         calculateTotal();
     }
+}
 
-    function closeModal() {
-        showModal = false;
-        order = null;
-    }
+function calculateTotal() {
+    localOrder.total = localOrder.products.reduce((sum, item) =>
+        sum + (item.price * item.quantity), 0);
+}
 
-    function handleSave() {
+$: {
+    calculateTotal();
+}
+
+function closeModal() {
+    showModal = false;
+    order = null;
+}
+
+import { saveOrder } from '$lib/utils/fetcher';
+
+async function handleSave() {
+    const orderToSave = {
+        client_id: localOrder.clientId,
+        order_items: localOrder.products.map(item => ({
+            product_id: item.productId,
+            quantity: item.quantity,
+            price: item.price
+        })),
+        total: localOrder.total,
+        status: localOrder.status,
+        date: localOrder.date
+    };
+
+    const result = await saveOrder(orderToSave);
+
+    if (result) {
         onSave(localOrder);
         closeModal();
+    } else {
+        console.error('Failed to save order');
     }
+}
 </script>
+
+{#if !orders || orders.length === 0}
+    <div class="flex flex-col items-center justify-center h-full">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-[4em] text-gray-400">
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z"/>
+        </svg>
+        <p class="text-lg text-gray-500 mt-4">Nenhum pedido encontrado.</p>
+    </div>
+{/if}
 
 {#if showModal}
     <dialog class="modal modal-open">

@@ -1,18 +1,21 @@
 <script lang="ts">
     import { onMount } from 'svelte';
     import { supabase } from '$lib/supabase';
-    import type { Database } from '$lib/types/database.types';
     import CategoryModal from "$lib/components/CategoryModal.svelte";
     import ConfirmDeleteModal from "$lib/components/ConfirmDeleteModal.svelte";
-    import { writable } from "svelte/store";
 
-    type Category = Database['public']['Tables']['categories']['Row'];
-    let allCategories: Category[] = [];
+    let allCategories: Array<{
+        id: number;
+        name: string;
+        description: string;
+        status: string;
+    }> = [];
     let searchTerm = "";
     let showCategoryModal = false;
     let showConfirmDeleteModal = false;
     let showConfirmBulkDeleteModal = false;
     let loading = true;
+    let isProcessingSave = false;
     let currentCategory: {
         id?: number;
         name: string;
@@ -22,17 +25,28 @@
     let categoryToDeleteId: number | null = null;
     let selectedCategoryIds = new Set<number>();
 
+    function getStatusBadgeClass(status: string) {
+        switch (status) {
+            case 'Ativo':
+                return 'badge-success';
+            case 'Inativo':
+                return 'badge-error';
+            default:
+                return 'badge-ghost';
+        }
+    }
+
     async function fetchCategories() {
         const { data, error } = await supabase
             .from('categories')
             .select('*')
             .order('name');
-        
+
         if (error) {
             console.error('Error fetching categories:', error);
             return;
         }
-        
+
         allCategories = data;
         loading = false;
     }
@@ -43,13 +57,14 @@
         // Subscribe to realtime changes
         const subscription = supabase
             .channel('categories_changes')
-            .on('postgres_changes', 
+            .on('postgres_changes',
                 {
                     event: '*',
                     schema: 'public',
                     table: 'categories'
                 },
                 (payload) => {
+                    console.log('Recebida atualização em tempo real para categorias:', payload);
                     fetchCategories();
                 }
             )
@@ -61,7 +76,7 @@
     });
 
     $: categories = allCategories.filter((category) =>
-        category.name.toLowerCase().includes(searchTerm.toLowerCase()),
+        category.name.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
     $: allVisibleSelected = categories.length > 0 && categories.every((c) => selectedCategoryIds.has(c.id));
@@ -117,35 +132,42 @@
         description: string;
         status: string;
     }) {
-        if (categoryData.id) {
-            const { error } = await supabase
-                .from('categories')
-                .update({
-                    name: categoryData.name,
-                    description: categoryData.description,
-                    status: categoryData.status
-                })
-                .eq('id', categoryData.id);
+        isProcessingSave = true;
+        try {
+            if (categoryData.id) {
+                const { error } = await supabase
+                    .from('categories')
+                    .update({
+                        name: categoryData.name,
+                        description: categoryData.description,
+                        status: categoryData.status
+                    })
+                    .eq('id', categoryData.id);
 
-            if (error) {
-                console.error('Error updating category:', error);
-                return;
-            }
-        } else {
-            const { error } = await supabase
-                .from('categories')
-                .insert([{
-                    name: categoryData.name,
-                    description: categoryData.description,
-                    status: categoryData.status || "Ativo"
-                }]);
+                if (error) {
+                    console.error('Error updating category:', error);
+                    return;
+                }
+            } else {
+                const { error } = await supabase
+                    .from('categories')
+                    .insert([{
+                        name: categoryData.name,
+                        description: categoryData.description,
+                        status: categoryData.status || "Ativo"
+                    }]);
 
-            if (error) {
-                console.error('Error inserting category:', error);
-                return;
+                if (error) {
+                    console.error('Error inserting category:', error);
+                    return;
+                }
             }
+            // Forçar atualização manual para garantir que os dados sejam atualizados
+            await fetchCategories();
+            showCategoryModal = false;
+        } finally {
+            isProcessingSave = false;
         }
-        showCategoryModal = false;
     }
 
     async function handleConfirmDelete() {
@@ -159,6 +181,9 @@
                 console.error('Error deleting category:', error);
                 return;
             }
+
+            // Forçar atualização manual para garantir que os dados sejam atualizados
+            await fetchCategories();
         }
         showConfirmDeleteModal = false;
         categoryToDeleteId = null;
@@ -274,10 +299,10 @@
                             </label>
                         </th>
                         <th class="w-[8%]">ID</th>
-                        <th class="w-[20%]">Nome</th>
-                        <th class="w-[40%]">Descrição</th>
+                        <th class="w-[30%]">Nome</th>
+                        <th class="w-[50%]">Descrição</th>
                         <th class="w-[15%]">Status</th>
-                        <th class="w-[13%] text-right"></th>
+                        <th class="w-[5%] text-right"></th>
                     </tr>
                 </thead>
                 <tbody>
@@ -303,7 +328,7 @@
                             <td>{category.id}</td>
                             <td>{category.name}</td>
                             <td>{category.description}</td>
-                            <td>{category.status}</td>
+                            <td><span class="badge {getStatusBadgeClass(category.status)}">{category.status}</span></td>
                             <td class="text-right">
                                 <div
                                     class="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200"
@@ -363,18 +388,19 @@
 
 <CategoryModal
     bind:showModal={showCategoryModal}
+    categories={categories}
     category={currentCategory}
     onSave={handleSaveCategory}
 />
 <ConfirmDeleteModal
+    clientName={categoryToDeleteId
+        ? allCategories.find((p) => p.id === categoryToDeleteId)?.name || ""
+        : ""}
     bind:showModal={showConfirmDeleteModal}
     onConfirm={handleConfirmDelete}
-    message={categoryToDeleteId
-        ? `Tem certeza que deseja excluir a categoria "${allCategories.find((p) => p.id === categoryToDeleteId)?.name || ""}"? Esta ação não pode ser desfeita.`
-        : ""}
 />
 <ConfirmDeleteModal
     bind:showModal={showConfirmBulkDeleteModal}
     onConfirm={handleConfirmBulkDelete}
-    message={`Tem certeza que deseja excluir as ${selectedCategoryIds.size} categorias selecionadas? Esta ação não pode ser desfeita.`}
+    message={`Tem certeza que deseja excluir os ${selectedCategoryIds.size} categorias selecionadas? Esta ação não pode ser desfeita.`}
 />
