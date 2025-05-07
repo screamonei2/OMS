@@ -3,7 +3,6 @@
     import { supabase } from "../supabase";
     import { session } from "$lib/stores/auth";
     import Brand from "$lib/components/Brand.svelte";
-    export let signOut: () => Promise<void>;
 
     interface Notification {
         id: number;
@@ -104,7 +103,7 @@
         <div class="flex-1">
             <a href="/" class="gap-2">
             <Brand />
-                
+
             </a>
         </div>
         <div class="flex-none">
@@ -247,8 +246,8 @@
         </div>
     </div>
 </header>
-<!-- 
-<style>
+<!--  -->
+<!-- <style>
     header {
         background-color: #2c3e50;
         color: white;
@@ -293,5 +292,4 @@
         background-color: #ecf0f1;
         color: #2c3e50;
     }
-</style>
- -->
+</style> -->

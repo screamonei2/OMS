@@ -8,6 +8,7 @@
 		category: string;
 	} | null = null;
 
+	export let isProcessing = false;
 	export let onSave: (product: {
 		id?: number;
 		name: string;
@@ -16,7 +17,12 @@
 		category: string;
 	}) => void;
 
-	let localProduct = { name: "", price: 0, stock: 0, category: "" };
+	let localProduct: {
+		name: string;
+		price: number;
+		stock: number;
+		category: string;
+	} = { name: "", price: 0, stock: 0, category: "" };
 
 	const categoryOptions = ["Roupas", "Acessórios", "Eletrônicos", "Alimentos", "Livros"];
 
@@ -108,35 +114,40 @@
 				</div>
 
 				<div class="modal-action mt-6">
-					<button type="button" class="btn" on:click={closeModal}>
+					<button type="button" class="btn" on:click={closeModal} disabled={isProcessing}>
 						<svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        viewBox="0 0 24 24"
-                        fill="currentColor"
-                        class="size-[1em]"
-                    >
-                        <path
-                            fill-rule="evenodd"
-                            d="M5.47 5.47a.75.75 0 0 1 1.06 0L12 10.94l5.47-5.47a.75.75 0 1 1 1.06 1.06L13.06 12l5.47 5.47a.75.75 0 1 1-1.06 1.06L12 13.06l-5.47 5.47a.75.75 0 0 1-1.06-1.06L10.94 12 5.47 6.53a.75.75 0 0 1 0-1.06Z"
-                            clip-rule="evenodd"
-                        />
-                    </svg>
-                    Cancelar
+							xmlns="http://www.w3.org/2000/svg"
+							viewBox="0 0 24 24"
+							fill="currentColor"
+							class="size-[1em]"
+						>
+							<path
+								fill-rule="evenodd"
+								d="M5.47 5.47a.75.75 0 0 1 1.06 0L12 10.94l5.47-5.47a.75.75 0 1 1 1.06 1.06L13.06 12l5.47 5.47a.75.75 0 1 1-1.06 1.06L12 13.06l-5.47 5.47a.75.75 0 0 1-1.06-1.06L10.94 12 5.47 6.53a.75.75 0 0 1 0-1.06Z"
+								clip-rule="evenodd"
+							/>
+						</svg>
+						Cancelar
 					</button>
-					<button type="submit" class="btn btn-primary">
-						<svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        viewBox="0 0 24 24"
-                        fill="currentColor"
-                        class="size-[1em]"
-                    >
-                        <path
-                            fill-rule="evenodd"
-                            d="M19.916 4.626a.75.75 0 0 1 .208 1.04l-9 13.5a.75.75 0 0 1-1.154.114l-6-6a.75.75 0 0 1 1.06-1.06l5.353 5.353 8.493-12.74a.75.75 0 0 1 1.04-.207Z"
-                            clip-rule="evenodd"
-                        />
-                    </svg>
-                    Salvar
+					<button type="submit" class="btn btn-primary" disabled={isProcessing}>
+						{#if isProcessing}
+							<span class="loading loading-spinner"></span>
+							Salvando...
+						{:else}
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								viewBox="0 0 24 24"
+								fill="currentColor"
+								class="size-[1em]"
+							>
+								<path
+									fill-rule="evenodd"
+									d="M19.916 4.626a.75.75 0 0 1 .208 1.04l-9 13.5a.75.75 0 0 1-1.154.114l-6-6a.75.75 0 0 1 1.06-1.06l5.353 5.353 8.493-12.74a.75.75 0 0 1 1.04-.207Z"
+									clip-rule="evenodd"
+								/>
+							</svg>
+							Salvar
+						{/if}
 					</button>
 				</div>
 			</form>

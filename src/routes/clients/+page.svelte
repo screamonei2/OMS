@@ -62,6 +62,7 @@
                     table: 'clients'
                 },
                 (payload) => {
+                    console.log('Recebida atualização em tempo real para clientes:', payload);
                     fetchClients();
                 }
             )
@@ -132,42 +133,43 @@
         status: string;
     }) {
         isProcessingSave = true;
-        await tick(); // Ensure UI updates before async operations
-        if (clientData.id) {
-            const { error } = await supabase
-                .from('clients')
-                .update({
-                    name: clientData.name,
-                    email: clientData.email,
-                    phone: clientData.phone,
-                    status: clientData.status
-                })
-                .eq('id', clientData.id);
+        try {
+            if (clientData.id) {
+                const { error } = await supabase
+                    .from('clients')
+                    .update({
+                        name: clientData.name,
+                        email: clientData.email,
+                        phone: clientData.phone,
+                        status: clientData.status
+                    })
+                    .eq('id', clientData.id);
 
-            if (error) {
-                console.error('Error updating client:', error);
-                isProcessingSave = false;
-                return;
-            }
-        } else {
-            const { error } = await supabase
-                .from('clients')
-                .insert([{
-                    name: clientData.name,
-                    email: clientData.email,
-                    phone: clientData.phone,
-                    status: clientData.status || "Ativo"
-                }]);
+                if (error) {
+                    console.error('Error updating client:', error);
+                    return;
+                }
+            } else {
+                const { error } = await supabase
+                    .from('clients')
+                    .insert([{
+                        name: clientData.name,
+                        email: clientData.email,
+                        phone: clientData.phone,
+                        status: clientData.status || "Ativo"
+                    }]);
 
-            if (error) {
-                console.error('Error inserting client:', error);
-                isProcessingSave = false;
-                return;
+                if (error) {
+                    console.error('Error inserting client:', error);
+                    return;
+                }
             }
+            // Forçar atualização manual para garantir que os dados sejam atualizados
+            await fetchClients();
+            showClientModal = false;
+        } finally {
+            isProcessingSave = false;
         }
-        // await fetchClients(); // Refresh the client list - Removed as per real-time subscription
-        isProcessingSave = false;
-        showClientModal = false;
     }
 
     async function handleConfirmDelete() {
@@ -181,6 +183,9 @@
                 console.error('Error deleting client:', error);
                 return;
             }
+            
+            // Forçar atualização manual para garantir que os dados sejam atualizados
+            await fetchClients();
         }
         showConfirmDeleteModal = false;
         clientToDeleteId = null;
