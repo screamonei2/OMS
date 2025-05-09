@@ -63,12 +63,19 @@ const authorization: Handle = async ({ event, resolve }) => {
     const publicRoutes = ['/auth', '/auth/callback']
     const isPublicRoute = publicRoutes.some(route => path.startsWith(route))
     
+    // Se não estiver autenticado e não for rota pública, redireciona para auth
     if (!session && !isPublicRoute) {
-        throw redirect(303, `/auth?redirectTo=${encodeURIComponent(path)}`)
+        throw redirect(303, '/auth')
     }
 
-    if (session && path === '/auth') {
-        throw redirect(303, '/')
+    // Se estiver autenticado e tentar acessar página de auth, redireciona para orders
+    if (session && path.startsWith('/auth')) {
+        throw redirect(303, '/orders')
+    }
+
+    // Se estiver autenticado e tentar acessar a raiz, redireciona para orders
+    if (session && path === '/') {
+        throw redirect(303, '/orders')
     }
 
     // Verificar permissões para rotas protegidas

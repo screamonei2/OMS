@@ -6,12 +6,18 @@
     import Sidebar from '$lib/components/Sidebar.svelte';
     import { invalidate } from '$app/navigation';
     import { onMount } from 'svelte';
+    import { goto } from '$app/navigation';
 
     export let data;
 
     $: {
         setSession(data.session);
         setLoading(false);
+        
+        // Redirecionar para o dashboard se estiver autenticado e na página raiz
+        if (data.session && $page.url.pathname === '/') {
+            goto('/dashboard');
+        }
     }
 
     onMount(() => {

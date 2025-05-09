@@ -6,22 +6,15 @@ import { supabase } from '$lib/supabase';
 export const GET: RequestHandler = async ({ url }) => {
     const token_hash = url.searchParams.get('token_hash');
     const type = url.searchParams.get('type') as EmailOtpType | null;
-    const next = url.searchParams.get('next') ?? '/';
+    const redirectTo = url.searchParams.get('redirectTo') ?? '/';
     const error_description = url.searchParams.get('error_description');
 
-    // Limpar a URL removendo os parâmetros de autenticação
-    const redirectTo = new URL(url);
-    redirectTo.pathname = next;
-    redirectTo.searchParams.delete('token_hash');
-    redirectTo.searchParams.delete('type');
-    redirectTo.searchParams.delete('next');
-
-    // Se houver erro na autenticação, redirecionar para página de login com mensagem
+    // If there's an error in authentication, redirect to login with message
     if (error_description) {
         return redirect(303, `/auth?error=${encodeURIComponent(error_description)}`);
     }
 
-    // Verificar token de autenticação
+    // Verify authentication token
     if (token_hash && type) {
         const { error } = await supabase.auth.verifyOtp({
             type,
@@ -29,14 +22,14 @@ export const GET: RequestHandler = async ({ url }) => {
         });
 
         if (!error) {
-            // Autenticação bem sucedida, redirecionar para a página inicial
-            return redirect(303, '/');
+            // Authentication successful, redirect to the originally requested page
+            return redirect(303, redirectTo);
         }
 
-        // Em caso de erro na verificação, redirecionar com mensagem de erro
-        return redirect(303, `/auth?error=${encodeURIComponent('Falha na verificação do email. Por favor, tente novamente.')}`);
+        // If verification fails, redirect with error message
+        return redirect(303, `/auth?error=${encodeURIComponent('Email verification failed. Please try again.')}`);
     }
 
-    // Se não houver token ou tipo, algo está errado no processo
-    return redirect(303, '/auth?error=Processo de autenticação inválido');
+    // If there's no token or type, something is wrong with the process
+    return redirect(303, '/auth?error=Invalid authentication process');
 };

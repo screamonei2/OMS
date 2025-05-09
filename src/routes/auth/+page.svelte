@@ -27,9 +27,5 @@
         </div>
     {/if}
     
-    <div class="card bg-base-100 shadow-xl w-full max-w-md">
-        <div class="card-body">
-            <Auth />
-        </div>
-    </div>
+    <Auth />
 </div>

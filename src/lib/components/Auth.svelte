@@ -1,97 +1,106 @@
 <script lang="ts">
-    import { enhance } from "$app/forms";
-    import { supabase } from "../supabase";
-    import { goto } from "$app/navigation";
-    import { handleAuthError } from "../utils/errorHandler";
-    import type { ApiError } from "../types";
+import { enhance } from "$app/forms";
+import { supabase } from "../supabase";
+import { goto } from "$app/navigation";
+import { handleAuthError } from "../utils/errorHandler";
+import type { ApiError } from "../types";
+import { setSession } from "$lib/stores/auth";
+import { page } from "$app/stores";
 
-    let loading = false;
-    let email = "";
-    let password = "";
-    let confirmPassword = "";
-    let isSignUp = false;
-    let error: ApiError | null = null;
+let loading = false;
+let email = "";
+let password = "";
+let confirmPassword = "";
+let isSignUp = false;
+let error: ApiError | null = null;
 
-    function toggleMode() {
-        isSignUp = !isSignUp;
-        error = null;
+$: redirectTo = $page.url.searchParams.get('redirectTo') || '/';
+
+function toggleMode() {
+    isSignUp = !isSignUp;
+    error = null;
+}
+
+function validateForm(): boolean {
+    if (!email || !password) {
+        error = {
+            message: "Por favor, preencha todos os campos",
+            status: 400,
+        };
+        return false;
     }
 
-    function validateForm(): boolean {
-        if (!email || !password) {
-            error = {
-                message: "Por favor, preencha todos os campos",
-                status: 400,
-            };
-            return false;
-        }
-
-        if (isSignUp && password !== confirmPassword) {
-            error = { message: "As senhas não coincidem", status: 400 };
-            return false;
-        }
-
-        if (password.length < 6) {
-            error = {
-                message: "A senha deve ter pelo menos 6 caracteres",
-                status: 400,
-            };
-            return false;
-        }
-
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(email)) {
-            error = {
-                message: "Por favor, insira um email válido",
-                status: 400,
-            };
-            return false;
-        }
-
-        return true;
+    if (isSignUp && password !== confirmPassword) {
+        error = { message: "As senhas não coincidem", status: 400 };
+        return false;
     }
 
-    async function handleAuth(event: SubmitEvent) {
-        event.preventDefault();
-        if (!validateForm()) return;
+    if (password.length < 6) {
+        error = {
+            message: "A senha deve ter pelo menos 6 caracteres",
+            status: 400,
+        };
+        return false;
+    }
 
-        loading = true;
-        error = null;
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+        error = {
+            message: "Por favor, insira um email válido",
+            status: 400,
+        };
+        return false;
+    }
 
-        try {
-            if (isSignUp) {
-                const { error: signUpError } = await supabase.auth.signUp({
+    return true;
+}
+
+async function handleAuth(event: SubmitEvent) {
+    event.preventDefault();
+    if (!validateForm()) return;
+
+    loading = true;
+    error = null;
+
+    try {
+        if (isSignUp) {
+            const { error: signUpError } = await supabase.auth.signUp({
+                email,
+                password,
+                options: {
+                    emailRedirectTo: `${window.location.origin}/auth/callback`,
+                },
+            });
+
+            if (signUpError) throw signUpError;
+            error = {
+                message: "Verifique seu email para confirmar o cadastro!",
+                status: 200,
+            };
+        } else {
+            const { error: signInError, data: { session } } =
+                await supabase.auth.signInWithPassword({
                     email,
                     password,
-                    options: {
-                        emailRedirectTo: `${window.location.origin}/auth/callback`,
-                    },
                 });
 
-                if (signUpError) throw signUpError;
-                error = {
-                    message: "Verifique seu email para confirmar o cadastro!",
-                    status: 200,
-                };
-            } else {
-                const { error: signInError } =
-                    await supabase.auth.signInWithPassword({
-                        email,
-                        password,
-                    });
+            if (signInError) throw signInError;
 
-                if (signInError) throw signInError;
-                goto("/");
-            }
-        } catch (err) {
-            error = handleAuthError(err);
-        } finally {
-            loading = false;
+            // Atualiza a sessão localmente antes do redirecionamento
+            setSession(session);
+            
+            // Force a navegação para orders usando replace (não adiciona ao histórico)
+            window.location.href = '/orders';
         }
+    } catch (err) {
+        error = handleAuthError(err);
+    } finally {
+        loading = false;
     }
+}
 </script>
 
-<div class="card bg-base-100 card-border border-base-300">
+<div class="card bg-base-100 card-border border-base-300 w-full max-w-md">
     <div class="card-body">
         <h2 class="card-title text-2xl font-bold mb-6">
             {isSignUp ? "Criar Conta" : "Entrar"}
