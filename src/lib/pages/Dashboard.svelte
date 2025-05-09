@@ -108,6 +108,8 @@
                         .reduce((sum, order) => sum + (order.total || 0), 0),
                 }));
 
+                // Ensure charts are destroyed before updating
+                await destroyCharts();
                 updateCharts(ordersByDay);
             }
         } finally {
@@ -115,30 +117,41 @@
         }
     }
 
-    function destroyCharts() {
-        if (orderTrendsChart) {
-            orderTrendsChart.destroy();
-            orderTrendsChart = null;
-        }
-        if (statusChart) {
-            statusChart.destroy();
-            statusChart = null;
-        }
-        if (revenueChart) {
-            revenueChart.destroy();
-            revenueChart = null;
-        }
+    async function destroyCharts() {
+        return new Promise<void>((resolve) => {
+            // Use setTimeout to ensure the chart destruction happens in the next event loop
+            setTimeout(() => {
+                if (orderTrendsChart) {
+                    orderTrendsChart.destroy();
+                    orderTrendsChart = null;
+                }
+                if (statusChart) {
+                    statusChart.destroy();
+                    statusChart = null;
+                }
+                if (revenueChart) {
+                    revenueChart.destroy();
+                    revenueChart = null;
+                }
+                resolve();
+            }, 0);
+        });
     }
 
     function updateCharts(
         ordersByDay: Array<{ date: string; count: number; revenue: number }>,
     ) {
-        destroyCharts();
-
-        // Update order trends chart
+        // Get canvas elements
         const orderTrendsCtx = document.getElementById(
             "orderTrendsChart",
         ) as HTMLCanvasElement;
+        const statusCtx = document.getElementById(
+            "statusChart",
+        ) as HTMLCanvasElement;
+        const revenueCtx = document.getElementById(
+            "revenueChart",
+        ) as HTMLCanvasElement;
+
         if (orderTrendsCtx) {
             orderTrendsChart = new Chart(orderTrendsCtx, {
                 type: "line",
@@ -176,10 +189,6 @@
             });
         }
 
-        // Update status distribution chart
-        const statusCtx = document.getElementById(
-            "statusChart",
-        ) as HTMLCanvasElement;
         if (statusCtx) {
             statusChart = new Chart(statusCtx, {
                 type: "doughnut",
@@ -219,10 +228,6 @@
             });
         }
 
-        // Update revenue chart
-        const revenueCtx = document.getElementById(
-            "revenueChart",
-        ) as HTMLCanvasElement;
         if (revenueCtx) {
             revenueChart = new Chart(revenueCtx, {
                 type: "bar",
