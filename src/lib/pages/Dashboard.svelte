@@ -28,90 +28,114 @@
         },
     };
 
-    let orderTrendsChart: Chart;
-    let statusChart: Chart;
-    let revenueChart: Chart;
+    let orderTrendsChart: Chart | null = null;
+    let statusChart: Chart | null = null;
+    let revenueChart: Chart | null = null;
+    let isUpdating = false;
 
     async function fetchStats() {
-        // Fetch total clients and active clients
-        const { data: clientsData } = await supabase
-            .from("clients")
-            .select("status");
+        if (isUpdating) return; // Prevent concurrent updates
+        isUpdating = true;
 
-        if (clientsData) {
-            stats.totalClients = clientsData.length;
-            stats.activeClients = clientsData.filter(
-                (c) => c.status === "Ativo",
-            ).length;
+        try {
+            // Fetch total clients and active clients
+            const { data: clientsData } = await supabase
+                .from("clients")
+                .select("status");
+
+            if (clientsData) {
+                stats.totalClients = clientsData.length;
+                stats.activeClients = clientsData.filter(
+                    (c) => c.status === "Ativo",
+                ).length;
+            }
+
+            // Fetch products and low stock count
+            const { data: productsData } = await supabase
+                .from("products")
+                .select("stock");
+
+            if (productsData) {
+                stats.totalProducts = productsData.length;
+                stats.lowStockProducts = productsData.filter(
+                    (p) => p.stock < 10,
+                ).length;
+            }
+
+            // Fetch orders statistics
+            const { data: ordersData } = await supabase
+                .from("orders")
+                .select("status, total, date");
+
+            if (ordersData) {
+                stats.totalOrders = ordersData.length;
+                stats.totalRevenue = ordersData.reduce(
+                    (sum, order) => sum + (order.total || 0),
+                    0,
+                );
+
+                // Reset status counts
+                Object.keys(stats.ordersByStatus).forEach((key) => {
+                    stats.ordersByStatus[key as OrderStatus] = 0;
+                });
+
+                // Count orders by status
+                ordersData.forEach((order) => {
+                    const status = order.status as OrderStatus;
+                    if (stats.ordersByStatus.hasOwnProperty(status)) {
+                        stats.ordersByStatus[status]++;
+                    }
+                });
+
+                // Count today's orders
+                const today = new Date().toISOString().split("T")[0];
+                stats.ordersToday = ordersData.filter(
+                    (order) => order.date === today,
+                ).length;
+
+                // Prepare data for charts
+                const lastDays = Array.from({ length: 7 }, (_, i) => {
+                    const d = new Date();
+                    d.setDate(d.getDate() - i);
+                    return d.toISOString().split("T")[0];
+                }).reverse();
+
+                const ordersByDay = lastDays.map((date) => ({
+                    date,
+                    count: ordersData.filter((order) => order.date === date).length,
+                    revenue: ordersData
+                        .filter((order) => order.date === date)
+                        .reduce((sum, order) => sum + (order.total || 0), 0),
+                }));
+
+                updateCharts(ordersByDay);
+            }
+        } finally {
+            isUpdating = false;
         }
+    }
 
-        // Fetch products and low stock count
-        const { data: productsData } = await supabase
-            .from("products")
-            .select("stock");
-
-        if (productsData) {
-            stats.totalProducts = productsData.length;
-            stats.lowStockProducts = productsData.filter(
-                (p) => p.stock < 10,
-            ).length;
+    function destroyCharts() {
+        if (orderTrendsChart) {
+            orderTrendsChart.destroy();
+            orderTrendsChart = null;
         }
-
-        // Fetch orders statistics
-        const { data: ordersData } = await supabase
-            .from("orders")
-            .select("status, total, date");
-
-        if (ordersData) {
-            stats.totalOrders = ordersData.length;
-            stats.totalRevenue = ordersData.reduce(
-                (sum, order) => sum + (order.total || 0),
-                0,
-            );
-
-            // Reset status counts
-            Object.keys(stats.ordersByStatus).forEach((key) => {
-                stats.ordersByStatus[key as OrderStatus] = 0;
-            });
-
-            // Count orders by status
-            ordersData.forEach((order) => {
-                const status = order.status as OrderStatus;
-                if (stats.ordersByStatus.hasOwnProperty(status)) {
-                    stats.ordersByStatus[status]++;
-                }
-            });
-
-            // Count today's orders
-            const today = new Date().toISOString().split("T")[0];
-            stats.ordersToday = ordersData.filter(
-                (order) => order.date === today,
-            ).length;
-
-            // Prepare data for charts
-            const lastDays = Array.from({ length: 7 }, (_, i) => {
-                const d = new Date();
-                d.setDate(d.getDate() - i);
-                return d.toISOString().split("T")[0];
-            }).reverse();
-
-            const ordersByDay = lastDays.map((date) => ({
-                date,
-                count: ordersData.filter((order) => order.date === date).length,
-                revenue: ordersData
-                    .filter((order) => order.date === date)
-                    .reduce((sum, order) => sum + (order.total || 0), 0),
-            }));
-
-            updateCharts(ordersByDay);
+        if (statusChart) {
+            statusChart.destroy();
+            statusChart = null;
+        }
+        if (revenueChart) {
+            revenueChart.destroy();
+            revenueChart = null;
         }
     }
 
     function updateCharts(
         ordersByDay: Array<{ date: string; count: number; revenue: number }>,
     ) {
+        destroyCharts();
+
         // Update order trends chart
-        if (orderTrendsChart) orderTrendsChart.destroy();
         const orderTrendsCtx = document.getElementById(
             "orderTrendsChart",
         ) as HTMLCanvasElement;
@@ -153,7 +177,6 @@
         }
 
         // Update status distribution chart
-        if (statusChart) statusChart.destroy();
         const statusCtx = document.getElementById(
             "statusChart",
         ) as HTMLCanvasElement;
@@ -197,7 +220,6 @@
         }
 
         // Update revenue chart
-        if (revenueChart) revenueChart.destroy();
         const revenueCtx = document.getElementById(
             "revenueChart",
         ) as HTMLCanvasElement;
@@ -270,10 +292,7 @@
 
         return () => {
             subscriptions.forEach((subscription) => subscription.unsubscribe());
-            // Cleanup charts on component destroy
-            [orderTrendsChart, statusChart, revenueChart].forEach((chart) =>
-                chart?.destroy(),
-            );
+            destroyCharts();
         };
     });
 </script>
