@@ -3,7 +3,11 @@
     import { supabase } from '$lib/supabase';
     import ClientModal from "$lib/components/ClientModal.svelte";
     import ConfirmDeleteModal from "$lib/components/ConfirmDeleteModal.svelte";
+    import { error } from '@sveltejs/kit';
 
+    let page = 1;
+    let pageSize = 10;
+    let totalClients = 0;
     let allClients: Array<{
 	id: number;
 	name: string;
@@ -40,19 +44,37 @@
         }
     }
 
-    async function fetchClients() {
-        const { data, error } = await supabase
-            .from('clients')
-            .select('*')
-            .order('name');
+    async function fetchClients(currentPage = page) {
+        try {
+            const from = (currentPage - 1) * pageSize;
+            const to = from + pageSize - 1;
 
-        if (error) {
-            console.error('Error fetching clients:', error);
-            return;
+            const { data, error: supabaseError, count } = await supabase
+                .from('clients')
+                .select('*', { count: 'exact' })
+                .order('name')
+                .range(from, to);
+
+            if (supabaseError) {
+                throw error(500, {
+                    message: 'Não foi possível carregar os clientes. Por favor, tente novamente.'
+                });
+            }
+
+            allClients = data;
+            totalClients = count || 0;
+            loading = false;
+        } catch (e) {
+            console.error('Error fetching clients:', e);
+            throw error(500, {
+                message: 'Erro ao buscar clientes. Por favor, atualize a página.'
+            });
         }
+    }
 
-        allClients = data;
-        loading = false;
+    function changePage(newPage: number) {
+        page = newPage;
+        fetchClients(page);
     }
 
     onMount(() => {
@@ -61,15 +83,24 @@
         // Subscribe to realtime changes
         const subscription = supabase
             .channel('clients_changes')
-            .on('postgres_changes',
-                {
-                    event: '*',
-                    schema: 'public',
-                    table: 'clients'
-                },
-                (payload) => {
-                    console.log('Recebida atualização em tempo real para clientes:', payload);
-                    fetchClients();
+            .on('postgres_changes', 
+                { event: 'INSERT', schema: 'public', table: 'clients' }, 
+                (payload: { new: typeof allClients[0] }) => {
+                    allClients = [payload.new, ...allClients].slice(0, pageSize);
+                    totalClients += 1;
+                }
+            )
+            .on('postgres_changes', 
+                { event: 'UPDATE', schema: 'public', table: 'clients' }, 
+                (payload: { new: typeof allClients[0] }) => {
+                    allClients = allClients.map((c) => (c.id === payload.new.id ? payload.new : c));
+                }
+            )
+            .on('postgres_changes', 
+                { event: 'DELETE', schema: 'public', table: 'clients' }, 
+                (payload: { old: typeof allClients[0] }) => {
+                    allClients = allClients.filter((c) => c.id !== payload.old.id);
+                    totalClients -= 1;
                 }
             )
             .subscribe();
@@ -141,7 +172,7 @@
         isProcessingSave = true;
         try {
             if (clientData.id) {
-                const { error } = await supabase
+                const { error: updateError } = await supabase
                     .from('clients')
                     .update({
                         name: clientData.name,
@@ -151,12 +182,13 @@
                     })
                     .eq('id', clientData.id);
 
-                if (error) {
-                    console.error('Error updating client:', error);
-                    return;
+                if (updateError) {
+                    throw error(500, {
+                        message: 'Não foi possível atualizar o cliente. Por favor, tente novamente.'
+                    });
                 }
             } else {
-                const { error } = await supabase
+                const { error: insertError } = await supabase
                     .from('clients')
                     .insert([{
                         name: clientData.name,
@@ -165,51 +197,72 @@
                         status: clientData.status || "Ativo"
                     }]);
 
-                if (error) {
-                    console.error('Error inserting client:', error);
-                    return;
+                if (insertError) {
+                    throw error(500, {
+                        message: 'Não foi possível criar o cliente. Por favor, tente novamente.'
+                    });
                 }
             }
-            // Forçar atualização manual para garantir que os dados sejam atualizados
+
             await fetchClients();
             showClientModal = false;
+        } catch (e) {
+            console.error('Error saving client:', e);
+            throw error(500, {
+                message: 'Erro ao salvar cliente. Por favor, tente novamente.'
+            });
         } finally {
             isProcessingSave = false;
         }
     }
 
     async function handleConfirmDelete() {
-        if (clientToDeleteId) {
-            const { error } = await supabase
+        try {
+            const { error: deleteError } = await supabase
                 .from('clients')
                 .delete()
                 .eq('id', clientToDeleteId);
 
-            if (error) {
-                console.error('Error deleting client:', error);
-                return;
+            if (deleteError) {
+                throw error(500, {
+                    message: 'Não foi possível excluir o cliente. Por favor, tente novamente.'
+                });
             }
 
-            // Forçar atualização manual para garantir que os dados sejam atualizados
             await fetchClients();
+            showConfirmDeleteModal = false;
+            clientToDeleteId = null;
+        } catch (e) {
+            console.error('Error deleting client:', e);
+            throw error(500, {
+                message: 'Erro ao excluir cliente. Por favor, tente novamente.'
+            });
         }
-        showConfirmDeleteModal = false;
-        clientToDeleteId = null;
     }
 
     async function handleConfirmBulkDelete() {
-        const { error } = await supabase
-            .from('clients')
-            .delete()
-            .in('id', Array.from(selectedClientIds));
+        try {
+            const { error: deleteError } = await supabase
+                .from('clients')
+                .delete()
+                .in('id', Array.from(selectedClientIds));
 
-        if (error) {
-            console.error('Error bulk deleting clients:', error);
-            return;
+            if (deleteError) {
+                throw error(500, {
+                    message: 'Não foi possível excluir os clientes selecionados. Por favor, tente novamente.'
+                });
+            }
+
+            selectedClientIds.clear();
+            selectedClientIds = selectedClientIds;
+            showConfirmBulkDeleteModal = false;
+            await fetchClients();
+        } catch (e) {
+            console.error('Error bulk deleting clients:', e);
+            throw error(500, {
+                message: 'Erro ao excluir clientes. Por favor, tente novamente.'
+            });
         }
-
-        selectedClientIds.clear();
-        showConfirmBulkDeleteModal = false;
     }
 </script>
 
@@ -392,6 +445,36 @@
                     {/each}
                 </tbody>
             </table>
+        </div>
+
+        <!-- Pagination Controls -->
+        <div class="flex justify-between items-center mt-4">
+            <button
+                class="btn"
+                on:click={() => changePage(page - 1)}
+                disabled={page === 1}
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+                </svg>
+                Anterior
+            </button>
+            <span class="text-sm">
+                Página {page} de {Math.ceil(totalClients / pageSize)}
+                {#if totalClients > 0}
+                    · Mostrando {(page - 1) * pageSize + 1} a {Math.min(page * pageSize, totalClients)} de {totalClients}
+                {/if}
+            </span>
+            <button
+                class="btn"
+                on:click={() => changePage(page + 1)}
+                disabled={page * pageSize >= totalClients}
+            >
+                Próxima
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                </svg>
+            </button>
         </div>
     </div>
 </div>

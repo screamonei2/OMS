@@ -1,6 +1,6 @@
 import { writable, derived } from 'svelte/store';
 import type { Session } from '@supabase/supabase-js';
-import supabase from '$lib/supabaseClient';
+import { supabase } from '$lib/supabase';
 
 function createAuthStore() {
     const { subscribe, set, update } = writable<{

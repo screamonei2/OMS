@@ -3,6 +3,7 @@
     import { supabase } from '$lib/supabase';
     import CategoryModal from "$lib/components/CategoryModal.svelte";
     import ConfirmDeleteModal from "$lib/components/ConfirmDeleteModal.svelte";
+    import { error } from '@sveltejs/kit';
 
     let allCategories: Array<{
         id: number;
@@ -37,18 +38,26 @@
     }
 
     async function fetchCategories() {
-        const { data, error } = await supabase
-            .from('categories')
-            .select('*')
-            .order('name');
+        try {
+            const { data, error: supabaseError } = await supabase
+                .from('categories')
+                .select('*')
+                .order('name');
 
-        if (error) {
-            console.error('Error fetching categories:', error);
-            return;
+            if (supabaseError) {
+                throw error(500, {
+                    message: 'Não foi possível carregar as categorias. Por favor, tente novamente.'
+                });
+            }
+
+            allCategories = data;
+            loading = false;
+        } catch (e) {
+            console.error('Error fetching categories:', e);
+            throw error(500, {
+                message: 'Erro ao buscar categorias. Por favor, atualize a página.'
+            });
         }
-
-        allCategories = data;
-        loading = false;
     }
 
     onMount(() => {
@@ -135,7 +144,7 @@
         isProcessingSave = true;
         try {
             if (categoryData.id) {
-                const { error } = await supabase
+                const { error: updateError } = await supabase
                     .from('categories')
                     .update({
                         name: categoryData.name,
@@ -144,12 +153,13 @@
                     })
                     .eq('id', categoryData.id);
 
-                if (error) {
-                    console.error('Error updating category:', error);
-                    return;
+                if (updateError) {
+                    throw error(500, {
+                        message: 'Não foi possível atualizar a categoria. Por favor, tente novamente.'
+                    });
                 }
             } else {
-                const { error } = await supabase
+                const { error: insertError } = await supabase
                     .from('categories')
                     .insert([{
                         name: categoryData.name,
@@ -157,51 +167,72 @@
                         status: categoryData.status || "Ativo"
                     }]);
 
-                if (error) {
-                    console.error('Error inserting category:', error);
-                    return;
+                if (insertError) {
+                    throw error(500, {
+                        message: 'Não foi possível criar a categoria. Por favor, tente novamente.'
+                    });
                 }
             }
-            // Forçar atualização manual para garantir que os dados sejam atualizados
+
             await fetchCategories();
             showCategoryModal = false;
+        } catch (e) {
+            console.error('Error saving category:', e);
+            throw error(500, {
+                message: 'Erro ao salvar categoria. Por favor, tente novamente.'
+            });
         } finally {
             isProcessingSave = false;
         }
     }
 
     async function handleConfirmDelete() {
-        if (categoryToDeleteId) {
-            const { error } = await supabase
+        try {
+            const { error: deleteError } = await supabase
                 .from('categories')
                 .delete()
                 .eq('id', categoryToDeleteId);
 
-            if (error) {
-                console.error('Error deleting category:', error);
-                return;
+            if (deleteError) {
+                throw error(500, {
+                    message: 'Não foi possível excluir a categoria. Por favor, tente novamente.'
+                });
             }
 
-            // Forçar atualização manual para garantir que os dados sejam atualizados
             await fetchCategories();
+            showConfirmDeleteModal = false;
+            categoryToDeleteId = null;
+        } catch (e) {
+            console.error('Error deleting category:', e);
+            throw error(500, {
+                message: 'Erro ao excluir categoria. Por favor, tente novamente.'
+            });
         }
-        showConfirmDeleteModal = false;
-        categoryToDeleteId = null;
     }
 
     async function handleConfirmBulkDelete() {
-        const { error } = await supabase
-            .from('categories')
-            .delete()
-            .in('id', Array.from(selectedCategoryIds));
+        try {
+            const { error: deleteError } = await supabase
+                .from('categories')
+                .delete()
+                .in('id', Array.from(selectedCategoryIds));
 
-        if (error) {
-            console.error('Error bulk deleting categories:', error);
-            return;
+            if (deleteError) {
+                throw error(500, {
+                    message: 'Não foi possível excluir as categorias selecionadas. Por favor, tente novamente.'
+                });
+            }
+
+            selectedCategoryIds.clear();
+            selectedCategoryIds = selectedCategoryIds;
+            showConfirmBulkDeleteModal = false;
+            await fetchCategories();
+        } catch (e) {
+            console.error('Error bulk deleting categories:', e);
+            throw error(500, {
+                message: 'Erro ao excluir categorias. Por favor, tente novamente.'
+            });
         }
-
-        selectedCategoryIds.clear();
-        showConfirmBulkDeleteModal = false;
     }
 </script>
 

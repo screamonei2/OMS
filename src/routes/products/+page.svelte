@@ -3,7 +3,11 @@
     import { supabase } from '$lib/supabase';
     import ProductModal from "$lib/components/ProductModal.svelte";
     import ConfirmDeleteModal from "$lib/components/ConfirmDeleteModal.svelte";
+    import { error } from '@sveltejs/kit';
 
+    let page = 1;
+    let pageSize = 10;
+    let totalProducts = 0;
     let allProducts: Array<{
         id: number;
         name: string;
@@ -27,19 +31,37 @@
     let productToDeleteId: number | null = null;
     let selectedProductIds = new Set<number>();
 
-    async function fetchProducts() {
-        const { data, error } = await supabase
-            .from('products')
-            .select('*')
-            .order('name');
+    async function fetchProducts(currentPage = page) {
+        try {
+            const from = (currentPage - 1) * pageSize;
+            const to = from + pageSize - 1;
 
-        if (error) {
-            console.error('Error fetching products:', error);
-            return;
+            const { data, error: supabaseError, count } = await supabase
+                .from('products')
+                .select('*', { count: 'exact' })
+                .order('name')
+                .range(from, to);
+
+            if (supabaseError) {
+                throw error(500, {
+                    message: 'Não foi possível carregar os produtos. Por favor, tente novamente.'
+                });
+            }
+
+            allProducts = data;
+            totalProducts = count || 0;
+            loading = false;
+        } catch (e) {
+            console.error('Error fetching products:', e);
+            throw error(500, {
+                message: 'Erro ao buscar produtos. Por favor, atualize a página.'
+            });
         }
+    }
 
-        allProducts = data;
-        loading = false;
+    function changePage(newPage: number) {
+        page = newPage;
+        fetchProducts(page);
     }
 
     onMount(() => {
@@ -48,15 +70,24 @@
         // Subscribe to realtime changes
         const subscription = supabase
             .channel('products_changes')
-            .on('postgres_changes',
-                {
-                    event: '*',
-                    schema: 'public',
-                    table: 'products'
-                },
+            .on('postgres_changes', 
+                { event: 'INSERT', schema: 'public', table: 'products' }, 
                 (payload) => {
-                    console.log('Recebida atualização em tempo real para produtos:', payload);
-                    fetchProducts();
+                    allProducts = [payload.new, ...allProducts].slice(0, pageSize);
+                    totalProducts += 1;
+                }
+            )
+            .on('postgres_changes', 
+                { event: 'UPDATE', schema: 'public', table: 'products' }, 
+                (payload) => {
+                    allProducts = allProducts.map((p) => (p.id === payload.new.id ? payload.new : p));
+                }
+            )
+            .on('postgres_changes', 
+                { event: 'DELETE', schema: 'public', table: 'products' }, 
+                (payload) => {
+                    allProducts = allProducts.filter((p) => p.id !== payload.old.id);
+                    totalProducts -= 1;
                 }
             )
             .subscribe();
@@ -128,7 +159,7 @@
         isProcessingSave = true;
         try {
             if (productData.id) {
-                const { error } = await supabase
+                const { error: updateError } = await supabase
                     .from('products')
                     .update({
                         name: productData.name,
@@ -138,12 +169,13 @@
                     })
                     .eq('id', productData.id);
 
-                if (error) {
-                    console.error('Error updating product:', error);
-                    return;
+                if (updateError) {
+                    throw error(500, {
+                        message: 'Não foi possível atualizar o produto. Por favor, tente novamente.'
+                    });
                 }
             } else {
-                const { error } = await supabase
+                const { error: insertError } = await supabase
                     .from('products')
                     .insert([{
                         name: productData.name,
@@ -152,51 +184,72 @@
                         category: productData.category
                     }]);
 
-                if (error) {
-                    console.error('Error inserting product:', error);
-                    return;
+                if (insertError) {
+                    throw error(500, {
+                        message: 'Não foi possível criar o produto. Por favor, tente novamente.'
+                    });
                 }
             }
-            // Forçar atualização manual para garantir que os dados sejam atualizados
+
             await fetchProducts();
             showProductModal = false;
+        } catch (e) {
+            console.error('Error saving product:', e);
+            throw error(500, {
+                message: 'Erro ao salvar produto. Por favor, tente novamente.'
+            });
         } finally {
             isProcessingSave = false;
         }
     }
 
     async function handleConfirmDelete() {
-        if (productToDeleteId) {
-            const { error } = await supabase
+        try {
+            const { error: deleteError } = await supabase
                 .from('products')
                 .delete()
                 .eq('id', productToDeleteId);
 
-            if (error) {
-                console.error('Error deleting product:', error);
-                return;
+            if (deleteError) {
+                throw error(500, {
+                    message: 'Não foi possível excluir o produto. Por favor, tente novamente.'
+                });
             }
 
-            // Forçar atualização manual para garantir que os dados sejam atualizados
             await fetchProducts();
+            showConfirmDeleteModal = false;
+            productToDeleteId = null;
+        } catch (e) {
+            console.error('Error deleting product:', e);
+            throw error(500, {
+                message: 'Erro ao excluir produto. Por favor, tente novamente.'
+            });
         }
-        showConfirmDeleteModal = false;
-        productToDeleteId = null;
     }
 
     async function handleConfirmBulkDelete() {
-        const { error } = await supabase
-            .from('products')
-            .delete()
-            .in('id', Array.from(selectedProductIds));
+        try {
+            const { error: deleteError } = await supabase
+                .from('products')
+                .delete()
+                .in('id', Array.from(selectedProductIds));
 
-        if (error) {
-            console.error('Error bulk deleting products:', error);
-            return;
+            if (deleteError) {
+                throw error(500, {
+                    message: 'Não foi possível excluir os produtos selecionados. Por favor, tente novamente.'
+                });
+            }
+
+            selectedProductIds.clear();
+            selectedProductIds = selectedProductIds;
+            showConfirmBulkDeleteModal = false;
+            await fetchProducts();
+        } catch (e) {
+            console.error('Error bulk deleting products:', e);
+            throw error(500, {
+                message: 'Erro ao excluir produtos. Por favor, tente novamente.'
+            });
         }
-
-        selectedProductIds.clear();
-        showConfirmBulkDeleteModal = false;
     }
 </script>
 
@@ -379,6 +432,36 @@
                     {/each}
                 </tbody>
             </table>
+        </div>
+
+        <!-- Pagination Controls -->
+        <div class="flex justify-between items-center mt-4">
+            <button
+                class="btn"
+                on:click={() => changePage(page - 1)}
+                disabled={page === 1}
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+                </svg>
+                Anterior
+            </button>
+            <span class="text-sm">
+                Página {page} de {Math.ceil(totalProducts / pageSize)}
+                {#if totalProducts > 0}
+                    · Mostrando {(page - 1) * pageSize + 1} a {Math.min(page * pageSize, totalProducts)} de {totalProducts}
+                {/if}
+            </span>
+            <button
+                class="btn"
+                on:click={() => changePage(page + 1)}
+                disabled={page * pageSize >= totalProducts}
+            >
+                Próxima
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                </svg>
+            </button>
         </div>
     </div>
 </div>

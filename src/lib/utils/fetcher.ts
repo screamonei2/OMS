@@ -1,4 +1,4 @@
-import supabase from '../supabaseClient';
+import { supabase } from '../supabase';
 
 export const fetchOrders = async () => {
   const { data, error } = await supabase
@@ -36,7 +36,7 @@ export const saveOrder = async (order: { client_id: number; order_items: any; to
     return null;
   }
 
-  const orderItems = order.order_items.map(item => ({
+  const orderItems = order.order_items.map((item: any) => ({
     order_id: orderData.id,
     product_id: item.product_id,
     quantity: item.quantity,

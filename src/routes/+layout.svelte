@@ -10,28 +10,38 @@
 
     export let data;
 
-    $: {
+$: {
         setSession(data.session);
         setLoading(false);
-        
+
         // Redirecionar para o dashboard se estiver autenticado e na página raiz
         if (data.session && $page.url.pathname === '/') {
-            goto('/dashboard');
+            redirectToDashboard();
         }
     }
 
-    onMount(() => {
-        const {
-            data: { subscription },
-        } = data.supabase.auth.onAuthStateChange((event, session) => {
-            if (session?.expires_at !== data.session?.expires_at) {
-                invalidate('supabase:auth');
-            }
-            setSession(session);
-        });
+    async function handleSignOut() {
+        await signOut();
+    }
 
-        return () => subscription.unsubscribe();
+    async function redirectToDashboard() {
+        await goto('/dashboard');
+    }
+
+onMount(() => {
+    const {
+        data: { subscription },
+    } = data.supabase.auth.onAuthStateChange((event, session) => {
+        if (session?.expires_at !== data.session?.expires_at) {
+            invalidate('supabase:auth');
+        }
+        setSession(session);
     });
+
+    return () => {
+        subscription.unsubscribe();
+    };
+});
 
     async function signOut() {
         const { error } = await data.supabase.auth.signOut();

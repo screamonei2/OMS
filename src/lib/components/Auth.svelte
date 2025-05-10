@@ -89,8 +89,8 @@ async function handleAuth(event: SubmitEvent) {
             // Atualiza a sessão localmente antes do redirecionamento
             setSession(session);
             
-            // Force a navegação para orders usando replace (não adiciona ao histórico)
-            window.location.href = '/orders';
+// Force a navegação para orders usando replace (não adiciona ao histórico)
+await goto('/orders', { replaceState: true });
         }
     } catch (err) {
         error = handleAuthError(err);

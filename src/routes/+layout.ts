@@ -1,10 +1,10 @@
-import supabase from '$lib/supabaseClient'
+import { supabase } from '$lib/supabase'
 import type { LayoutLoad } from './$types'
 
 export const load: LayoutLoad = async () => {
-    const { data: { session } } = await supabase.auth.getSession()
+    const { data: { session } } = await supabase.auth.getSession();
     return {
         supabase,
-        session
-    }
-}
+        session: session || null
+    };
+};

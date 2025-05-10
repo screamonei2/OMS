@@ -3,7 +3,11 @@
     import { supabase } from '$lib/supabase';
     import OrderModal from "$lib/components/OrderModal.svelte";
     import ConfirmDeleteModal from "$lib/components/ConfirmDeleteModal.svelte";
+    import { error } from '@sveltejs/kit';
 
+    let page = 1;
+    let pageSize = 10;
+    let totalOrders = 0;
     let allOrders: Array<{
         id: number;
         client_id: number;
@@ -37,19 +41,37 @@
     let orderToDeleteId: number | null = null;
     let selectedOrderIds = new Set<number>();
 
-    async function fetchOrders() {
-        const { data, error } = await supabase
-            .from('orders')
-            .select('*')
-            .order('date', { ascending: false });
+    async function fetchOrders(currentPage = page) {
+        try {
+            const from = (currentPage - 1) * pageSize;
+            const to = from + pageSize - 1;
 
-        if (error) {
-            console.error('Error fetching orders:', error);
-            return;
+            const { data, error: supabaseError, count } = await supabase
+                .from('orders')
+                .select('*', { count: 'exact' })
+                .order('date', { ascending: false })
+                .range(from, to);
+
+            if (supabaseError) {
+                throw error(500, {
+                    message: 'Não foi possível carregar os pedidos. Por favor, tente novamente.'
+                });
+            }
+
+            allOrders = data;
+            totalOrders = count || 0;
+            loading = false;
+        } catch (e) {
+            console.error('Error fetching orders:', e);
+            throw error(500, {
+                message: 'Erro ao buscar pedidos. Por favor, atualize a página.'
+            });
         }
+    }
 
-        allOrders = data;
-        loading = false;
+    function changePage(newPage: number) {
+        page = newPage;
+        fetchOrders(page);
     }
 
     onMount(() => {
@@ -58,15 +80,24 @@
         // Subscribe to realtime changes
         const subscription = supabase
             .channel('orders_changes')
-            .on('postgres_changes',
-                {
-                    event: '*',
-                    schema: 'public',
-                    table: 'orders'
-                },
+            .on('postgres_changes', 
+                { event: 'INSERT', schema: 'public', table: 'orders' }, 
                 (payload) => {
-                    console.log('Recebida atualização em tempo real para pedidos:', payload);
-                    fetchOrders();
+                    allOrders = [payload.new, ...allOrders].slice(0, pageSize);
+                    totalOrders += 1;
+                }
+            )
+            .on('postgres_changes', 
+                { event: 'UPDATE', schema: 'public', table: 'orders' }, 
+                (payload) => {
+                    allOrders = allOrders.map((o) => (o.id === payload.new.id ? payload.new : o));
+                }
+            )
+            .on('postgres_changes', 
+                { event: 'DELETE', schema: 'public', table: 'orders' }, 
+                (payload) => {
+                    allOrders = allOrders.filter((o) => o.id !== payload.old.id);
+                    totalOrders -= 1;
                 }
             )
             .subscribe();
@@ -150,77 +181,167 @@
         isProcessingSave = true;
         try {
             if (orderData.id) {
-                const { error } = await supabase
+                const { error: updateError } = await supabase
                     .from('orders')
                     .update({
                         client_id: orderData.clientId,
-                        order_items: orderData.products,
                         total: orderData.total,
                         status: orderData.status,
                         date: orderData.date
                     })
                     .eq('id', orderData.id);
 
-                if (error) {
-                    console.error('Error updating order:', error);
-                    return;
+                if (updateError) {
+                    throw error(500, {
+                        message: 'Não foi possível atualizar o pedido. Por favor, tente novamente.'
+                    });
+                }
+
+                // Update order items
+                const { error: deleteItemsError } = await supabase
+                    .from('order_items')
+                    .delete()
+                    .eq('order_id', orderData.id);
+
+                if (deleteItemsError) {
+                    throw error(500, {
+                        message: 'Erro ao atualizar itens do pedido. Por favor, tente novamente.'
+                    });
+                }
+
+                const { error: insertItemsError } = await supabase
+                    .from('order_items')
+                    .insert(orderData.products.map(product => ({
+                        order_id: orderData.id,
+                        product_id: product.productId,
+                        quantity: product.quantity,
+                        price: product.price
+                    })));
+
+                if (insertItemsError) {
+                    throw error(500, {
+                        message: 'Erro ao atualizar itens do pedido. Por favor, tente novamente.'
+                    });
                 }
             } else {
-                const { error } = await supabase
+                const { data: orderResult, error: insertError } = await supabase
                     .from('orders')
                     .insert([{
                         client_id: orderData.clientId,
-                        order_items: orderData.products,
                         total: orderData.total,
                         status: orderData.status,
                         date: orderData.date
-                    }]);
+                    }])
+                    .select()
+                    .single();
 
-                if (error) {
-                    console.error('Error inserting order:', error);
-                    return;
+                if (insertError || !orderResult) {
+                    throw error(500, {
+                        message: 'Não foi possível criar o pedido. Por favor, tente novamente.'
+                    });
+                }
+
+                const { error: insertItemsError } = await supabase
+                    .from('order_items')
+                    .insert(orderData.products.map(product => ({
+                        order_id: orderResult.id,
+                        product_id: product.productId,
+                        quantity: product.quantity,
+                        price: product.price
+                    })));
+
+                if (insertItemsError) {
+                    throw error(500, {
+                        message: 'Erro ao adicionar itens ao pedido. Por favor, tente novamente.'
+                    });
                 }
             }
-            // Forçar atualização manual para garantir que os dados sejam atualizados
+
             await fetchOrders();
             showOrderModal = false;
+        } catch (e) {
+            console.error('Error saving order:', e);
+            throw error(500, {
+                message: 'Erro ao salvar pedido. Por favor, tente novamente.'
+            });
         } finally {
             isProcessingSave = false;
         }
     }
 
     async function handleConfirmDelete() {
-        if (orderToDeleteId) {
-            const { error } = await supabase
+        try {
+            // First delete order items
+            const { error: deleteItemsError } = await supabase
+                .from('order_items')
+                .delete()
+                .eq('order_id', orderToDeleteId);
+
+            if (deleteItemsError) {
+                throw error(500, {
+                    message: 'Erro ao excluir itens do pedido. Por favor, tente novamente.'
+                });
+            }
+
+            // Then delete the order
+            const { error: deleteError } = await supabase
                 .from('orders')
                 .delete()
                 .eq('id', orderToDeleteId);
 
-            if (error) {
-                console.error('Error deleting order:', error);
-                return;
+            if (deleteError) {
+                throw error(500, {
+                    message: 'Não foi possível excluir o pedido. Por favor, tente novamente.'
+                });
             }
 
-            // Forçar atualização manual para garantir que os dados sejam atualizados
             await fetchOrders();
+            showConfirmDeleteModal = false;
+            orderToDeleteId = null;
+        } catch (e) {
+            console.error('Error deleting order:', e);
+            throw error(500, {
+                message: 'Erro ao excluir pedido. Por favor, tente novamente.'
+            });
         }
-        showConfirmDeleteModal = false;
-        orderToDeleteId = null;
     }
 
     async function handleConfirmBulkDelete() {
-        const { error } = await supabase
-            .from('orders')
-            .delete()
-            .in('id', Array.from(selectedOrderIds));
+        try {
+            // First delete all order items for selected orders
+            const { error: deleteItemsError } = await supabase
+                .from('order_items')
+                .delete()
+                .in('order_id', Array.from(selectedOrderIds));
 
-        if (error) {
-            console.error('Error bulk deleting orders:', error);
-            return;
+            if (deleteItemsError) {
+                throw error(500, {
+                    message: 'Erro ao excluir itens dos pedidos. Por favor, tente novamente.'
+                });
+            }
+
+            // Then delete the orders
+            const { error: deleteError } = await supabase
+                .from('orders')
+                .delete()
+                .in('id', Array.from(selectedOrderIds));
+
+            if (deleteError) {
+                throw error(500, {
+                    message: 'Não foi possível excluir os pedidos selecionados. Por favor, tente novamente.'
+                });
+            }
+
+            selectedOrderIds.clear();
+            selectedOrderIds = selectedOrderIds;
+            showConfirmBulkDeleteModal = false;
+            await fetchOrders();
+        } catch (e) {
+            console.error('Error bulk deleting orders:', e);
+            throw error(500, {
+                message: 'Erro ao excluir pedidos. Por favor, tente novamente.'
+            });
         }
-
-        selectedOrderIds.clear();
-        showConfirmBulkDeleteModal = false;
     }
 </script>
 
@@ -403,6 +524,36 @@
                     {/each}
                 </tbody>
             </table>
+        </div>
+
+        <!-- Pagination Controls -->
+        <div class="flex justify-between items-center mt-4">
+            <button
+                class="btn"
+                on:click={() => changePage(page - 1)}
+                disabled={page === 1}
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+                </svg>
+                Anterior
+            </button>
+            <span class="text-sm">
+                Página {page} de {Math.ceil(totalOrders / pageSize)}
+                {#if totalOrders > 0}
+                    · Mostrando {(page - 1) * pageSize + 1} a {Math.min(page * pageSize, totalOrders)} de {totalOrders}
+                {/if}
+            </span>
+            <button
+                class="btn"
+                on:click={() => changePage(page + 1)}
+                disabled={page * pageSize >= totalOrders}
+            >
+                Próxima
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                </svg>
+            </button>
         </div>
     </div>
 </div>
