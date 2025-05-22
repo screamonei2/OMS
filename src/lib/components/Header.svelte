@@ -102,7 +102,7 @@ import Brand from "$lib/components/Brand.svelte";
     <div class="navbar">
         <div class="flex-1">
             <a href="/" class="gap-2">
-            <Brand />
+            <Brand data-testid="brand-logo" />
 
             </a>
         </div>
